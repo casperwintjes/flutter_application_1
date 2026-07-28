@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -454,22 +455,54 @@ class _NotesHomePageState extends State<NotesHomePage> {
   late NotesService _notesService;
   List<Note> _notes = [];
   bool _isLoading = true;
+  bool _isRefreshing = false;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _notesService = NotesService();
     _loadNotes();
+
+    _refreshTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) {
+        _refreshNotes();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadNotes() async {
     await _notesService.initialize();
     final notes = await _notesService.loadNotes();
+    if (!mounted) return;
     setState(() {
       _notes = notes;
       _notes.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       _isLoading = false;
     });
+  }
+
+  Future<void> _refreshNotes() async {
+    if (_isRefreshing) return;
+    setState(() {
+      _isRefreshing = true;
+    });
+
+    try {
+      await _loadNotes();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRefreshing = false;
+        });
+      }
+    }
   }
 
   void _addNote() async {
@@ -543,6 +576,20 @@ class _NotesHomePageState extends State<NotesHomePage> {
         title: const Text('My Notes & Recipes'),
         elevation: 2,
         actions: [
+          IconButton(
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.refresh),
+            onPressed: _refreshNotes,
+            tooltip: 'Refresh notes',
+          ),
           IconButton(
             icon: const Icon(Icons.restaurant_menu),
             onPressed: () {
