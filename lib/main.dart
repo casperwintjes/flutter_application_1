@@ -529,6 +529,29 @@ class RecipeService {
   static const String _storageKey = 'recipes_list';
   final SharedStorageService _storage = SharedStorageService();
 
+  Recipe _buildDefaultRecipe() {
+    return Recipe(
+      id: 'default-standaard',
+      name: 'Standaard',
+      items: [
+        RecipeItem(
+          id: 'default-standaard-kwark-r',
+          name: 'Kwark R',
+          quantity: '2',
+        ),
+        RecipeItem(
+          id: 'default-standaard-kwark-c',
+          name: 'Kwark C',
+          quantity: '1',
+        ),
+        RecipeItem(id: 'default-standaard-kaas', name: 'Kaas', quantity: '1'),
+        RecipeItem(id: 'default-standaard-cola', name: 'Cola', quantity: 'X'),
+        RecipeItem(id: 'default-standaard-fanta', name: 'Fanta', quantity: 'X'),
+      ],
+      createdAt: DateTime(2024, 1, 1),
+    );
+  }
+
   Future<void> initialize() async {
     await _storage.initialize();
   }
@@ -545,7 +568,18 @@ class RecipeService {
     final remoteRecipesJson = await _storage.loadRemoteValue(_storageKey);
     final localRecipes = _parseRecipes(localRecipesJson);
     final remoteRecipes = _parseRecipes(remoteRecipesJson);
-    return mergeRecipes(localRecipes, remoteRecipes);
+    final mergedRecipes = mergeRecipes(localRecipes, remoteRecipes);
+
+    if (mergedRecipes.isEmpty) {
+      final seededRecipes = [_buildDefaultRecipe()];
+      await _storage.saveValue(
+        _storageKey,
+        jsonEncode(seededRecipes.map((recipe) => recipe.toJson()).toList()),
+      );
+      return seededRecipes;
+    }
+
+    return mergedRecipes;
   }
 
   Future<void> saveRecipes(List<Recipe> recipes) async {

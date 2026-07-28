@@ -93,4 +93,14 @@ void main() {
 
     expect(value, '[]');
   });
+
+  test('Loading recipes seeds a default Standaard recipe', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    final service = RecipeService();
+    await service.initialize();
+    final recipes = await service.loadRecipes();
+
+    expect(recipes.any((recipe) => recipe.name == 'Standaard'), isTrue);
+  });
 }
