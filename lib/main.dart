@@ -199,6 +199,7 @@ class SharedStorageService {
     AppStorage? storage,
     this.endpointUrl,
     this.token,
+    this.baseUri,
   }) : _client = client ?? http.Client(),
        _storage = storage;
 
@@ -206,6 +207,7 @@ class SharedStorageService {
   final AppStorage? _storage;
   final String? endpointUrl;
   final String? token;
+  final Uri? baseUri;
   AppStorage? _resolvedStorage;
 
   Future<void> initialize() async {
@@ -213,7 +215,23 @@ class SharedStorageService {
   }
 
   String? _configuredEndpoint() {
-    return endpointUrl ?? _readConfigValue('sharedStorageUrl');
+    final configuredEndpoint =
+        endpointUrl ?? _readConfigValue('sharedStorageUrl');
+    if (configuredEndpoint == null || configuredEndpoint.trim().isEmpty) {
+      return null;
+    }
+
+    final base = baseUri ?? Uri.base;
+    final parsedEndpoint = Uri.tryParse(configuredEndpoint);
+    if (parsedEndpoint == null) {
+      return configuredEndpoint;
+    }
+
+    if (parsedEndpoint.hasScheme) {
+      return parsedEndpoint.toString();
+    }
+
+    return base.resolveUri(parsedEndpoint).toString();
   }
 
   String? _configuredToken() {

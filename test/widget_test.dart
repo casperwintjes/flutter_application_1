@@ -76,4 +76,21 @@ void main() {
 
     expect(storedValue, 'persisted');
   });
+
+  test('Shared storage resolves relative Home Assistant endpoints', () async {
+    final client = MockClient((request) async {
+      expect(request.url.toString(), 'https://homeassistant.local/api/storage');
+      return http.Response(jsonEncode({'notes_list': '[]'}), 200);
+    });
+
+    final storage = SharedStorageService(
+      client: client,
+      endpointUrl: '/api/storage',
+      baseUri: Uri.parse('https://homeassistant.local/hassio/ingress/test'),
+    );
+
+    final value = await storage.loadValue('notes_list');
+
+    expect(value, '[]');
+  });
 }
