@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_application_1/app_storage.dart';
 import 'package:flutter_application_1/main.dart';
 
 void main() {
@@ -64,5 +65,15 @@ void main() {
     final value = await storage.loadValue('notes_list');
 
     expect(value, '[]');
+  });
+
+  test('App storage persists values across storage instances', () async {
+    final firstStorage = await createAppStorage();
+    await firstStorage.write('notes_app_test', 'persisted');
+
+    final secondStorage = await createAppStorage();
+    final storedValue = await secondStorage.read('notes_app_test');
+
+    expect(storedValue, 'persisted');
   });
 }

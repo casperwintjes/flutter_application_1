@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+
+import 'app_storage.dart';
 
 void main() {
   runApp(const NotesApp());
@@ -194,29 +196,56 @@ class Note {
 class SharedStorageService {
   SharedStorageService({
     http.Client? client,
-    SharedPreferences? prefs,
+    AppStorage? storage,
     this.endpointUrl,
     this.token,
   }) : _client = client ?? http.Client(),
-       _preferences = prefs;
+       _storage = storage;
 
   final http.Client _client;
-  final SharedPreferences? _preferences;
+  final AppStorage? _storage;
   final String? endpointUrl;
   final String? token;
-  SharedPreferences? _resolvedPreferences;
+  AppStorage? _resolvedStorage;
 
   Future<void> initialize() async {
-    _resolvedPreferences ??=
-        _preferences ?? await SharedPreferences.getInstance();
+    _resolvedStorage ??= _storage ?? await createAppStorage();
   }
 
   String? _configuredEndpoint() {
-    return endpointUrl ?? Uri.base.queryParameters['sharedStorageUrl'];
+    return endpointUrl ?? _readConfigValue('sharedStorageUrl');
   }
 
   String? _configuredToken() {
-    return token ?? Uri.base.queryParameters['sharedStorageToken'];
+    return token ?? _readConfigValue('sharedStorageToken');
+  }
+
+  String? _readConfigValue(String key) {
+    final queryValue = Uri.base.queryParameters[key];
+    if (queryValue != null && queryValue.isNotEmpty) {
+      return queryValue;
+    }
+
+    final fragment = Uri.base.fragment;
+    if (fragment.isNotEmpty) {
+      final fragmentUri = Uri.tryParse(fragment);
+      if (fragmentUri != null) {
+        final fragmentValue = fragmentUri.queryParameters[key];
+        if (fragmentValue != null && fragmentValue.isNotEmpty) {
+          return fragmentValue;
+        }
+      }
+    }
+
+    if (kIsWeb) {
+      final location = Uri.base.toString();
+      final match = RegExp('$key=([^&]+)').firstMatch(location);
+      if (match != null) {
+        return Uri.decodeComponent(match.group(1)!);
+      }
+    }
+
+    return null;
   }
 
   Future<String?> loadRemoteValue(String storageKey) async {
@@ -259,7 +288,7 @@ class SharedStorageService {
 
   Future<String?> loadLocalValue(String storageKey) async {
     await initialize();
-    return _resolvedPreferences?.getString(storageKey);
+    return _resolvedStorage?.read(storageKey);
   }
 
   Future<String?> loadValue(String storageKey) async {
@@ -288,7 +317,7 @@ class SharedStorageService {
         );
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
-          await _resolvedPreferences?.setString(storageKey, encodedValue);
+          await _resolvedStorage?.write(storageKey, encodedValue);
           return;
         }
       } catch (_) {
@@ -296,7 +325,7 @@ class SharedStorageService {
       }
     }
 
-    await _resolvedPreferences?.setString(storageKey, encodedValue);
+    await _resolvedStorage?.write(storageKey, encodedValue);
   }
 }
 
