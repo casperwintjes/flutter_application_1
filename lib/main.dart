@@ -219,40 +219,55 @@ class SharedStorageService {
     return token ?? Uri.base.queryParameters['sharedStorageToken'];
   }
 
-  Future<String?> loadValue(String storageKey) async {
+  Future<String?> loadRemoteValue(String storageKey) async {
     await initialize();
 
     final configuredEndpoint = _configuredEndpoint();
-    if (configuredEndpoint != null && configuredEndpoint.trim().isNotEmpty) {
-      try {
-        final response = await _client.get(
-          Uri.parse(configuredEndpoint),
-          headers: {
-            if (_configuredToken() != null && _configuredToken()!.isNotEmpty)
-              'Authorization': 'Bearer ${_configuredToken()}',
-            'Content-Type': 'application/json',
-          },
-        );
-
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          final decoded = jsonDecode(response.body);
-          if (decoded is Map<String, dynamic>) {
-            if (decoded.containsKey(storageKey)) {
-              final value = decoded[storageKey];
-              if (value is String) {
-                return value;
-              }
-              return jsonEncode(value);
-            }
-          }
-          return response.body;
-        }
-      } catch (_) {
-        // Fall back to local storage below.
-      }
+    if (configuredEndpoint == null || configuredEndpoint.trim().isEmpty) {
+      return null;
     }
 
+    try {
+      final response = await _client.get(
+        Uri.parse(configuredEndpoint),
+        headers: {
+          if (_configuredToken() != null && _configuredToken()!.isNotEmpty)
+            'Authorization': 'Bearer ${_configuredToken()}',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          if (decoded.containsKey(storageKey)) {
+            final value = decoded[storageKey];
+            if (value is String) {
+              return value;
+            }
+            return jsonEncode(value);
+          }
+        }
+        return response.body;
+      }
+    } catch (_) {
+      return null;
+    }
+
+    return null;
+  }
+
+  Future<String?> loadLocalValue(String storageKey) async {
+    await initialize();
     return _resolvedPreferences?.getString(storageKey);
+  }
+
+  Future<String?> loadValue(String storageKey) async {
+    final remoteValue = await loadRemoteValue(storageKey);
+    if (remoteValue != null && remoteValue.isNotEmpty) {
+      return remoteValue;
+    }
+    return loadLocalValue(storageKey);
   }
 
   Future<void> saveValue(String storageKey, String encodedValue) async {
@@ -273,6 +288,7 @@ class SharedStorageService {
         );
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
+          await _resolvedPreferences?.setString(storageKey, encodedValue);
           return;
         }
       } catch (_) {
@@ -284,6 +300,55 @@ class SharedStorageService {
   }
 }
 
+List<Note> mergeNotes(List<Note> existingNotes, List<Note> incomingNotes) {
+  final mergedById = <String, Note>{};
+
+  for (final note in [...existingNotes, ...incomingNotes]) {
+    final current = mergedById[note.id];
+    if (current == null) {
+      mergedById[note.id] = note;
+      continue;
+    }
+
+    final shouldReplace =
+        note.updatedAt.isAfter(current.updatedAt) ||
+        (note.updatedAt.isAtSameMomentAs(current.updatedAt) &&
+            note.createdAt.isAfter(current.createdAt));
+
+    if (shouldReplace) {
+      mergedById[note.id] = note;
+    }
+  }
+
+  final merged = mergedById.values.toList();
+  merged.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  return merged;
+}
+
+List<Recipe> mergeRecipes(
+  List<Recipe> existingRecipes,
+  List<Recipe> incomingRecipes,
+) {
+  final mergedById = <String, Recipe>{};
+
+  for (final recipe in [...existingRecipes, ...incomingRecipes]) {
+    final current = mergedById[recipe.id];
+    if (current == null) {
+      mergedById[recipe.id] = recipe;
+      continue;
+    }
+
+    final shouldReplace = recipe.createdAt.isAfter(current.createdAt);
+    if (shouldReplace) {
+      mergedById[recipe.id] = recipe;
+    }
+  }
+
+  final merged = mergedById.values.toList();
+  merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  return merged;
+}
+
 // Notes Service
 class NotesService {
   static const String _storageKey = 'notes_list';
@@ -293,17 +358,32 @@ class NotesService {
     await _storage.initialize();
   }
 
-  Future<List<Note>> loadNotes() async {
-    final String? notesJson = await _storage.loadValue(_storageKey);
+  List<Note> _parseNotes(String? notesJson) {
     if (notesJson == null || notesJson.isEmpty) return [];
 
     final List<dynamic> decoded = jsonDecode(notesJson);
     return decoded.map((json) => Note.fromJson(json)).toList();
   }
 
+  Future<List<Note>> loadNotes() async {
+    final localNotesJson = await _storage.loadLocalValue(_storageKey);
+    final remoteNotesJson = await _storage.loadRemoteValue(_storageKey);
+    final localNotes = _parseNotes(localNotesJson);
+    final remoteNotes = _parseNotes(remoteNotesJson);
+    return mergeNotes(localNotes, remoteNotes);
+  }
+
   Future<void> saveNotes(List<Note> notes) async {
+    final localNotesJson = await _storage.loadLocalValue(_storageKey);
+    final remoteNotesJson = await _storage.loadRemoteValue(_storageKey);
+    final existingNotes = _parseNotes(localNotesJson);
+    final incomingNotes = _parseNotes(remoteNotesJson);
+    final mergedNotes = mergeNotes(
+      existingNotes,
+      mergeNotes(incomingNotes, notes),
+    );
     final String encoded = jsonEncode(
-      notes.map((note) => note.toJson()).toList(),
+      mergedNotes.map((note) => note.toJson()).toList(),
     );
     await _storage.saveValue(_storageKey, encoded);
   }
@@ -339,17 +419,32 @@ class RecipeService {
     await _storage.initialize();
   }
 
-  Future<List<Recipe>> loadRecipes() async {
-    final String? recipesJson = await _storage.loadValue(_storageKey);
+  List<Recipe> _parseRecipes(String? recipesJson) {
     if (recipesJson == null || recipesJson.isEmpty) return [];
 
     final List<dynamic> decoded = jsonDecode(recipesJson);
     return decoded.map((json) => Recipe.fromJson(json)).toList();
   }
 
+  Future<List<Recipe>> loadRecipes() async {
+    final localRecipesJson = await _storage.loadLocalValue(_storageKey);
+    final remoteRecipesJson = await _storage.loadRemoteValue(_storageKey);
+    final localRecipes = _parseRecipes(localRecipesJson);
+    final remoteRecipes = _parseRecipes(remoteRecipesJson);
+    return mergeRecipes(localRecipes, remoteRecipes);
+  }
+
   Future<void> saveRecipes(List<Recipe> recipes) async {
+    final localRecipesJson = await _storage.loadLocalValue(_storageKey);
+    final remoteRecipesJson = await _storage.loadRemoteValue(_storageKey);
+    final existingRecipes = _parseRecipes(localRecipesJson);
+    final incomingRecipes = _parseRecipes(remoteRecipesJson);
+    final mergedRecipes = mergeRecipes(
+      existingRecipes,
+      mergeRecipes(incomingRecipes, recipes),
+    );
     final String encoded = jsonEncode(
-      recipes.map((recipe) => recipe.toJson()).toList(),
+      mergedRecipes.map((recipe) => recipe.toJson()).toList(),
     );
     await _storage.saveValue(_storageKey, encoded);
   }
@@ -604,129 +699,146 @@ class _NotesHomePageState extends State<NotesHomePage> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _notes.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2563EB).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.note_outlined,
-                      size: 64,
-                      color: const Color(0xFF2563EB),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No notes yet',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey[800],
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Tap the + button to create your first note',
-                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            )
-          : ListView.builder(
-              itemCount: _notes.length,
-              padding: const EdgeInsets.all(12),
-              itemBuilder: (context, index) {
-                final note = _notes[index];
-                return Card(
-                  elevation: 2,
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.all(16),
-                    title: Text(
-                      note.title.isEmpty ? 'Untitled' : note.title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          : RefreshIndicator(
+              onRefresh: _refreshNotes,
+              child: _notes.isEmpty
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
                       children: [
-                        const SizedBox(height: 8),
-                        if (note.isChecklist)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.check_box,
-                                    size: 16,
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.7,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xFF2563EB,
+                                    ).withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    Icons.note_outlined,
+                                    size: 64,
                                     color: const Color(0xFF2563EB),
                                   ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${note.listItems.where((item) => item.isChecked).length}/${note.listItems.length} completed',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: const Color(0xFF2563EB),
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No notes yet',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    color: Colors.grey[800],
+                                    fontWeight: FontWeight.w600,
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                            ],
-                          )
-                        else
-                          Text(
-                            note.content,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.grey[700],
-                              fontSize: 14,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Tap the + button to create your first note',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        const SizedBox(height: 8),
-                        Text(
-                          DateFormat(
-                            'MMM dd, yyyy - hh:mm a',
-                          ).format(note.updatedAt),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
+                        ),
+                      ],
+                    )
+                  : ListView.builder(
+                      itemCount: _notes.length,
+                      padding: const EdgeInsets.all(12),
+                      itemBuilder: (context, index) {
+                        final note = _notes[index];
+                        return Card(
+                          elevation: 2,
+                          margin: const EdgeInsets.symmetric(vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        ),
-                      ],
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.all(16),
+                            title: Text(
+                              note.title.isEmpty ? 'Untitled' : note.title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 8),
+                                if (note.isChecklist)
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.check_box,
+                                            size: 16,
+                                            color: const Color(0xFF2563EB),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '${note.listItems.where((item) => item.isChecked).length}/${note.listItems.length} completed',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: const Color(0xFF2563EB),
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                    ],
+                                  )
+                                else
+                                  Text(
+                                    note.content,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.grey[700],
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  DateFormat(
+                                    'MMM dd, yyyy - hh:mm a',
+                                  ).format(note.updatedAt),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            onTap: () => _editNote(note),
+                            trailing: PopupMenuButton(
+                              itemBuilder: (context) => [
+                                PopupMenuItem(
+                                  child: const Text('Edit'),
+                                  onTap: () => _editNote(note),
+                                ),
+                                PopupMenuItem(
+                                  child: const Text('Delete'),
+                                  onTap: () => _deleteNote(note),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                    onTap: () => _editNote(note),
-                    trailing: PopupMenuButton(
-                      itemBuilder: (context) => [
-                        PopupMenuItem(
-                          child: const Text('Edit'),
-                          onTap: () => _editNote(note),
-                        ),
-                        PopupMenuItem(
-                          child: const Text('Delete'),
-                          onTap: () => _deleteNote(note),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addNote,
