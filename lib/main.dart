@@ -98,6 +98,7 @@ class Note {
   final String title;
   final String content;
   final List<ListItem> listItems;
+  final List<String> selectedRecipes;
   final bool isChecklist;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -107,6 +108,7 @@ class Note {
     required this.title,
     this.content = '',
     this.listItems = const [],
+    this.selectedRecipes = const [],
     this.isChecklist = false,
     required this.createdAt,
     required this.updatedAt,
@@ -117,6 +119,7 @@ class Note {
     'title': title,
     'content': content,
     'listItems': listItems.map((item) => item.toJson()).toList(),
+    'selectedRecipes': selectedRecipes,
     'isChecklist': isChecklist,
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': updatedAt.toIso8601String(),
@@ -128,6 +131,9 @@ class Note {
     content: json['content'] ?? '',
     listItems: (json['listItems'] as List<dynamic>?)
         ?.map((item) => ListItem.fromJson(item))
+        .toList() ?? [],
+    selectedRecipes: (json['selectedRecipes'] as List<dynamic>?)
+        ?.map((item) => item.toString())
         .toList() ?? [],
     isChecklist: json['isChecklist'] ?? false,
     createdAt: DateTime.parse(json['createdAt']),
@@ -561,6 +567,7 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
   late TextEditingController _contentController;
   late TextEditingController _listItemController;
   late List<ListItem> _listItems;
+  late List<String> _selectedRecipeNames;
   late bool _isChecklist;
 
   @override
@@ -569,8 +576,9 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
     _titleController = TextEditingController(text: widget.note?.title ?? '');
     _contentController = TextEditingController(text: widget.note?.content ?? '');
     _listItemController = TextEditingController();
-    _isChecklist = widget.note?.isChecklist ?? false;
+    _isChecklist = widget.note?.isChecklist ?? true;
     _listItems = List.from(widget.note?.listItems ?? []);
+    _selectedRecipeNames = List.from(widget.note?.selectedRecipes ?? []);
   }
 
   List<ListItem> _getSortedListItems() {
@@ -613,55 +621,90 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
       return;
     }
 
-    showDialog(
+    final selectedRecipeIds = <String>{};
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Load Recipe'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: recipes.length,
-            itemBuilder: (context, index) {
-              final recipe = recipes[index];
-              return ListTile(
-                title: Text(recipe.name),
-                subtitle: Text('${recipe.items.length} items'),
-                onTap: () {
-                  setState(() {
-                    for (final recipeItem in recipe.items) {
-                      _listItems.add(ListItem(
-                        id: DateTime.now().millisecondsSinceEpoch.toString() + recipeItem.id,
-                        text: recipeItem.name,
-                        quantity: recipeItem.quantity,
-                      ));
-                    }
-                  });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Added ${recipe.items.length} items from recipe')),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Add recipes'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: recipes.length,
+                  itemBuilder: (context, index) {
+                    final recipe = recipes[index];
+                    return CheckboxListTile(
+                      value: selectedRecipeIds.contains(recipe.id),
+                      title: Text(recipe.name),
+                      subtitle: Text('${recipe.items.length} items'),
+                      onChanged: (selected) {
+                        setDialogState(() {
+                          if (selected ?? false) {
+                            selectedRecipeIds.add(recipe.id);
+                          } else {
+                            selectedRecipeIds.remove(recipe.id);
+                          }
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: selectedRecipeIds.isEmpty
+                      ? null
+                      : () => Navigator.pop(context, true),
+                  child: const Text('Add'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
+
+    if (confirmed ?? false) {
+      setState(() {
+        for (final recipeId in selectedRecipeIds) {
+          final recipe = recipes.firstWhere((recipe) => recipe.id == recipeId);
+          if (_selectedRecipeNames.contains(recipe.name)) {
+            continue;
+          }
+
+          _selectedRecipeNames.add(recipe.name);
+          for (final recipeItem in recipe.items) {
+            _listItems.add(ListItem(
+              id: '${DateTime.now().millisecondsSinceEpoch}-${recipeItem.id}',
+              text: recipeItem.name,
+              quantity: recipeItem.quantity,
+            ));
+          }
+        }
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Added ${selectedRecipeIds.length} recipe(s)')),
+        );
+      }
+    }
   }
 
   void _saveNote() {
     if (_titleController.text.isEmpty && 
         _contentController.text.isEmpty && 
-        _listItems.isEmpty) {
+        _listItems.isEmpty &&
+        _selectedRecipeNames.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a title or content')),
+        const SnackBar(content: Text('Please enter a title or add recipes/items')),
       );
       return;
     }
@@ -672,6 +715,7 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
       title: _titleController.text,
       content: _contentController.text,
       listItems: _listItems,
+      selectedRecipes: _selectedRecipeNames,
       isChecklist: _isChecklist,
       createdAt: widget.note?.createdAt ?? now,
       updatedAt: now,
@@ -722,51 +766,20 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
               maxLines: null,
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  _isChecklist ? Icons.check_box : Icons.description,
-                  color: const Color(0xFF2563EB),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _isChecklist ? 'Checklist Mode' : 'Text Mode',
-                    style: const TextStyle(fontSize: 14, color: Colors.grey),
-                  ),
-                ),
-                Switch(
-                  value: _isChecklist,
-                  onChanged: (value) {
-                    setState(() {
-                      _isChecklist = value;
-                    });
-                  },
-                  activeThumbColor: const Color(0xFF2563EB),
-                ),
-              ],
+            Text(
+              'Choose recipes and add any extra items you need.',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: _isChecklist ? _buildChecklistView() : _buildTextView(),
+              child: _buildChecklistView(),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildTextView() {
-    return TextField(
-      controller: _contentController,
-      decoration: const InputDecoration(
-        hintText: 'Start typing...',
-        border: InputBorder.none,
-        hintStyle: TextStyle(color: Colors.grey),
-      ),
-      maxLines: null,
-      expands: true,
-      textAlignVertical: TextAlignVertical.top,
     );
   }
 
@@ -776,10 +789,24 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
       children: [
         SizedBox(
           width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _loadRecipe,
-            icon: const Icon(Icons.restaurant_menu),
-            label: const Text('Load Recipe'),
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _loadRecipe,
+                  icon: const Icon(Icons.restaurant_menu),
+                  label: const Text('Add recipes'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _showAddItemDialog,
+                  icon: const Icon(Icons.add_circle_outline),
+                  label: const Text('Add extra item'),
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 12),
@@ -861,32 +888,53 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
                   },
                 ),
         ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              flex: 2,
-              child: TextField(
-                controller: _listItemController,
-                decoration: InputDecoration(
-                  hintText: 'Add item...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+        const SizedBox(height: 12),
+        if (_selectedRecipeNames.isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.restaurant_menu,
+                      size: 18,
+                      color: Color(0xFF2563EB),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Selected recipes',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[800],
+                      ),
+                    ),
+                  ],
                 ),
-                onSubmitted: (value) {
-                  _showAddItemDialog();
-                },
-              ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _selectedRecipeNames
+                      .map(
+                        (name) => Chip(
+                          label: Text(name),
+                          backgroundColor: const Color(0xFFDBEAFE),
+                          labelStyle: const TextStyle(color: Color(0xFF1D4ED8)),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              onPressed: _showAddItemDialog,
-              icon: const Icon(Icons.add),
-              label: const Text('Add'),
-            ),
-          ],
-        ),
+          ),
       ],
     );
   }
@@ -896,7 +944,7 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Add Item'),
+        title: const Text('Add extra item'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
