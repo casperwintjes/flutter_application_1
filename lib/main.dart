@@ -266,6 +266,33 @@ class SharedStorageService {
     return null;
   }
 
+  static const String _documentStorageKey = '__app_shared_document__';
+
+  Map<String, String> _parseDocument(String? rawValue) {
+    if (rawValue == null || rawValue.isEmpty) {
+      return <String, String>{};
+    }
+
+    try {
+      final decoded = jsonDecode(rawValue);
+      if (decoded is Map<String, dynamic>) {
+        final map = <String, String>{};
+        decoded.forEach((key, value) {
+          if (value is String) {
+            map[key] = value;
+          } else {
+            map[key] = jsonEncode(value);
+          }
+        });
+        return map;
+      }
+    } catch (_) {
+      // Fall back to a legacy raw entry below.
+    }
+
+    return <String, String>{};
+  }
+
   Future<String?> loadRemoteValue(String storageKey) async {
     await initialize();
 
@@ -285,17 +312,14 @@ class SharedStorageService {
       );
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
-          if (decoded.containsKey(storageKey)) {
-            final value = decoded[storageKey];
-            if (value is String) {
-              return value;
-            }
-            return jsonEncode(value);
-          }
+        final document = _parseDocument(response.body);
+        if (document.containsKey(storageKey)) {
+          return document[storageKey];
         }
-        return response.body;
+
+        if (response.body.trim().isNotEmpty) {
+          return response.body;
+        }
       }
     } catch (_) {
       return null;
@@ -306,6 +330,14 @@ class SharedStorageService {
 
   Future<String?> loadLocalValue(String storageKey) async {
     await initialize();
+
+    final document = _parseDocument(
+      await _resolvedStorage?.read(_documentStorageKey),
+    );
+    if (document.containsKey(storageKey)) {
+      return document[storageKey];
+    }
+
     return _resolvedStorage?.read(storageKey);
   }
 
@@ -320,10 +352,22 @@ class SharedStorageService {
   Future<void> saveValue(String storageKey, String encodedValue) async {
     await initialize();
 
+    final localDocument = _parseDocument(
+      await _resolvedStorage?.read(_documentStorageKey),
+    );
+    final remoteDocument = await _loadRemoteDocument();
+    final mergedDocument = <String, String>{
+      ...localDocument,
+      ...remoteDocument,
+    };
+    mergedDocument[storageKey] = encodedValue;
+
+    final encodedDocument = jsonEncode(mergedDocument);
+    await _resolvedStorage?.write(_documentStorageKey, encodedDocument);
+
     final configuredEndpoint = _configuredEndpoint();
     if (configuredEndpoint != null && configuredEndpoint.trim().isNotEmpty) {
       try {
-        final payload = <String, dynamic>{storageKey: jsonDecode(encodedValue)};
         final response = await _client.post(
           Uri.parse(configuredEndpoint),
           headers: {
@@ -331,19 +375,42 @@ class SharedStorageService {
               'Authorization': 'Bearer ${_configuredToken()}',
             'Content-Type': 'application/json',
           },
-          body: jsonEncode(payload),
+          body: encodedDocument,
         );
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
-          await _resolvedStorage?.write(storageKey, encodedValue);
           return;
         }
       } catch (_) {
         // Fall back to local storage below.
       }
     }
+  }
 
-    await _resolvedStorage?.write(storageKey, encodedValue);
+  Future<Map<String, String>> _loadRemoteDocument() async {
+    final configuredEndpoint = _configuredEndpoint();
+    if (configuredEndpoint == null || configuredEndpoint.trim().isEmpty) {
+      return <String, String>{};
+    }
+
+    try {
+      final response = await _client.get(
+        Uri.parse(configuredEndpoint),
+        headers: {
+          if (_configuredToken() != null && _configuredToken()!.isNotEmpty)
+            'Authorization': 'Bearer ${_configuredToken()}',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return _parseDocument(response.body);
+      }
+    } catch (_) {
+      return <String, String>{};
+    }
+
+    return <String, String>{};
   }
 }
 
