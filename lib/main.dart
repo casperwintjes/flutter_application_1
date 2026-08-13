@@ -990,10 +990,8 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
                               ),
                               SizedBox(
                                 width: 80,
-                                child: TextField(
-                                  controller: TextEditingController(
-                                    text: item.quantity,
-                                  ),
+                                child: TextFormField(
+                                  initialValue: item.quantity,
                                   decoration: InputDecoration(
                                     hintText: 'Qty',
                                     border: OutlineInputBorder(
