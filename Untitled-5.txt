@@ -1,0 +1,141 @@
+import 'package:flutter/material.dart';
+
+import '../models/note.dart';
+import '../repositories/note_repository.dart';
+
+class NoteEditor extends StatefulWidget {
+
+  final Note? note;
+
+  const NoteEditor({
+    super.key,
+    this.note,
+  });
+
+  @override
+  State<NoteEditor> createState() =>
+      _NoteEditorState();
+}
+
+class _NoteEditorState
+    extends State<NoteEditor> {
+
+  final titleController =
+      TextEditingController();
+
+  final contentController =
+      TextEditingController();
+
+  final repo = NoteRepository();
+
+  @override
+  void initState() {
+
+    super.initState();
+
+    if (widget.note != null) {
+
+      titleController.text =
+          widget.note!.title;
+
+      contentController.text =
+          widget.note!.content;
+    }
+  }
+
+  Future saveNote() async {
+
+    if (titleController.text.trim().isEmpty &&
+        contentController.text.trim().isEmpty) {
+      return;
+    }
+
+    if (widget.note == null) {
+
+      await repo.insertNote(
+        Note(
+          title: titleController.text,
+          content: contentController.text,
+          createdAt:
+              DateTime.now().toString(),
+        ),
+      );
+
+    } else {
+
+      await repo.updateNote(
+        Note(
+          id: widget.note!.id,
+          title: titleController.text,
+          content: contentController.text,
+          createdAt:
+              widget.note!.createdAt,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+
+    return PopScope(
+
+      onPopInvoked: (didPop) async {
+
+        await saveNote();
+      },
+
+      child: Scaffold(
+
+        appBar: AppBar(
+          title: const Text("Notitie"),
+        ),
+
+        body: Padding(
+
+          padding:
+              const EdgeInsets.all(16),
+
+          child: Column(
+
+            children: [
+
+              TextField(
+
+                controller:
+                    titleController,
+
+                decoration:
+                    const InputDecoration(
+                  hintText: "Titel",
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              Expanded(
+
+                child: TextField(
+
+                  controller:
+                      contentController,
+
+                  maxLines: null,
+
+                  expands: true,
+
+                  decoration:
+                      const InputDecoration(
+                    hintText:
+                        "Schrijf hier...",
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
