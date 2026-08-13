@@ -44,7 +44,8 @@ List<ListItem> mergeListItems(
   }
 
   // ensure a unique id even when items are added rapidly
-  final uniqueId = '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}';
+  // Use a safe upper bound for nextInt to avoid JS 32-bit shift overflow on web.
+  final uniqueId = '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 30)}';
   updatedItems.add(
     ListItem(
       id: uniqueId,
