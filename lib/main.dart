@@ -698,6 +698,8 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
     setState(() {
       _listItems = updated;
     });
+    // Ensure controllers exist for any newly added/merged items
+    _syncQuantityControllers();
   }
 
   List<ListItem> _getSortedListItems() {
@@ -821,6 +823,8 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
           }
         }
       });
+      // Ensure controllers exist for any newly added items from recipes
+      _syncQuantityControllers();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -966,14 +970,19 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
                     style: TextStyle(color: Colors.grey[500]),
                   ),
                 )
-              : ReorderableListView(
+                : ReorderableListView(
                   onReorder: (oldIndex, newIndex) {
                     setState(() {
                       if (newIndex > oldIndex) newIndex -= 1;
                       final item = _listItems.removeAt(oldIndex);
                       _listItems.insert(newIndex, item);
                     });
+                    // Keep controllers in sync with the moved items
+                    _syncQuantityControllers();
                   },
+                  // Disable the default right-side drag handles because we
+                  // provide a left-side `ReorderableDragStartListener`.
+                  buildDefaultDragHandles: false,
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   children: List.generate(
                     sortedItems.length,
