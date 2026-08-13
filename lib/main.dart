@@ -44,7 +44,7 @@ List<ListItem> mergeListItems(
 
   updatedItems.add(
     ListItem(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
       text: normalizedText,
       quantity: quantity.trim().isEmpty ? '1' : quantity.trim(),
     ),
@@ -645,17 +645,25 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
     if (_selectedRecipeNames.isEmpty) return;
     await _recipeService.initialize();
     final recipes = await _recipeService.loadRecipes();
-    setState(() {
-      for (final name in _selectedRecipeNames) {
-        final recipe = recipes.firstWhere(
-          (r) => r.name.toLowerCase() == name.toLowerCase(),
-          orElse: () => Recipe(id: '', name: '', items: [], createdAt: DateTime.now()),
-        );
-        if (recipe.id.isEmpty) continue;
-        for (final recipeItem in recipe.items) {
-          _listItems = mergeListItems(_listItems, recipeItem.name, recipeItem.quantity);
-        }
+    // Batch updates and set state once to avoid multiple rebuilds.
+    final updated = List<ListItem>.from(_listItems);
+    for (final name in _selectedRecipeNames) {
+      final recipe = recipes.firstWhere(
+        (r) => r.name.toLowerCase() == name.toLowerCase(),
+        orElse: () => Recipe(id: '', name: '', items: [], createdAt: DateTime.now()),
+      );
+      if (recipe.id.isEmpty) continue;
+      for (final recipeItem in recipe.items) {
+        final merged = mergeListItems(updated, recipeItem.name, recipeItem.quantity);
+        updated
+          ..clear()
+          ..addAll(merged);
       }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _listItems = updated;
     });
   }
 
