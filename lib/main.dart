@@ -622,6 +622,7 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
   late List<ListItem> _listItems;
   late List<String> _selectedRecipeNames;
   late bool _isChecklist;
+  late RecipeService _recipeService;
 
   @override
   void initState() {
