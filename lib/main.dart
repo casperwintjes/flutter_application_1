@@ -915,11 +915,7 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
               maxLines: null,
             ),
             const SizedBox(height: 12),
-            Text(
-              'Choose recipes and add any extra items you need.',
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-            ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Expanded(
               child: DefaultTabController(
                 length: 2,
