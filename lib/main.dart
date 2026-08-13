@@ -634,6 +634,28 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
     _isChecklist = widget.note?.isChecklist ?? true;
     _listItems = List.from(widget.note?.listItems ?? []);
     _selectedRecipeNames = List.from(widget.note?.selectedRecipes ?? []);
+    _recipeService = RecipeService();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hydrateSelectedRecipes();
+    });
+  }
+
+  Future<void> _hydrateSelectedRecipes() async {
+    if (_selectedRecipeNames.isEmpty) return;
+    await _recipeService.initialize();
+    final recipes = await _recipeService.loadRecipes();
+    setState(() {
+      for (final name in _selectedRecipeNames) {
+        final recipe = recipes.firstWhere(
+          (r) => r.name.toLowerCase() == name.toLowerCase(),
+          orElse: () => Recipe(id: '', name: '', items: [], createdAt: DateTime.now()),
+        );
+        if (recipe.id.isEmpty) continue;
+        for (final recipeItem in recipe.items) {
+          _listItems = mergeListItems(_listItems, recipeItem.name, recipeItem.quantity);
+        }
+      }
+    });
   }
 
   List<ListItem> _getSortedListItems() {
@@ -994,52 +1016,6 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
                 ),
         ),
         const SizedBox(height: 12),
-        if (_selectedRecipeNames.isNotEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.restaurant_menu,
-                      size: 18,
-                      color: Color(0xFF2563EB),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Selected recipes',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[800],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _selectedRecipeNames
-                      .map(
-                        (name) => Chip(
-                          label: Text(name),
-                          backgroundColor: const Color(0xFFDBEAFE),
-                          labelStyle: const TextStyle(color: Color(0xFF1D4ED8)),
-                        ),
-                      )
-                      .toList(),
-                ),
-              ],
-            ),
-          ),
       ],
     );
   }
