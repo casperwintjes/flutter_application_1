@@ -36,14 +36,14 @@ void main() {
     expect(find.byIcon(Icons.add), findsOneWidget);
   });
 
-  test('Duplicate items merge into one row with multiplied quantities', () {
+  test('Duplicate items merge into one row with summed quantities', () {
     final items = <ListItem>[ListItem(id: '1', text: 'Milk', quantity: '2')];
 
     final merged = mergeListItems(items, 'Milk', '3');
 
     expect(merged.length, 1);
     expect(merged.first.text, 'Milk');
-    expect(merged.first.quantity, '6');
+    expect(merged.first.quantity, '5');
   });
 
   test('Storage service loads an empty document when no data is present', () async {

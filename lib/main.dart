@@ -32,14 +32,12 @@ List<ListItem> mergeListItems(
 
   if (existingIndex != -1) {
     final existing = updatedItems[existingIndex];
+    final sum = _parseQuantityValue(existing.quantity) + _parseQuantityValue(quantity);
     updatedItems[existingIndex] = ListItem(
       id: existing.id,
       text: existing.text,
       isChecked: existing.isChecked,
-      quantity:
-          (_parseQuantityValue(existing.quantity) *
-                  _parseQuantityValue(quantity))
-              .toString(),
+      quantity: sum.toString(),
     );
     return updatedItems;
   }
