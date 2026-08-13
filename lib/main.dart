@@ -901,7 +901,7 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
         ],
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
         child: Column(
           children: [
             TextField(
@@ -914,8 +914,8 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               maxLines: null,
             ),
-            const SizedBox(height: 12),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
+            const SizedBox(height: 4),
             Expanded(
               child: DefaultTabController(
                 length: 2,
