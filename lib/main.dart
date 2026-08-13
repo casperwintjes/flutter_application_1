@@ -1,64 +1,12 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
-import 'app_storage.dart';
+import 'services/models.dart';
+import 'services/storage_service.dart';
 
 void main() {
   runApp(const NotesApp());
-}
-
-// List Item Model with Quantity
-class ListItem {
-  final String id;
-  final String text;
-  bool isChecked;
-  String quantity;
-
-  ListItem({
-    required this.id,
-    required this.text,
-    this.isChecked = false,
-    this.quantity = '',
-  });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'text': text,
-    'isChecked': isChecked,
-    'quantity': quantity,
-  };
-
-  factory ListItem.fromJson(Map<String, dynamic> json) => ListItem(
-    id: json['id'],
-    text: json['text'],
-    isChecked: json['isChecked'] ?? false,
-    quantity: json['quantity'] ?? '',
-  );
-}
-
-// Recipe Item Model with Quantity
-class RecipeItem {
-  final String id;
-  final String name;
-  String quantity;
-
-  RecipeItem({required this.id, required this.name, this.quantity = ''});
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'quantity': quantity,
-  };
-
-  factory RecipeItem.fromJson(Map<String, dynamic> json) => RecipeItem(
-    id: json['id'],
-    name: json['name'],
-    quantity: json['quantity'] ?? '',
-  );
 }
 
 int _parseQuantityValue(String value) {
@@ -107,399 +55,85 @@ List<ListItem> mergeListItems(
   return updatedItems;
 }
 
-// Recipe Model (template for notes with quantities)
-class Recipe {
-  final String id;
-  final String name;
-  final List<RecipeItem> items;
-  final DateTime createdAt;
-
-  Recipe({
-    required this.id,
-    required this.name,
-    required this.items,
-    required this.createdAt,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'items': items.map((item) => item.toJson()).toList(),
-    'createdAt': createdAt.toIso8601String(),
-  };
-
-  factory Recipe.fromJson(Map<String, dynamic> json) => Recipe(
-    id: json['id'],
-    name: json['name'],
-    items:
-        (json['items'] as List<dynamic>?)
-            ?.map((item) => RecipeItem.fromJson(item))
-            .toList() ??
-        [],
-    createdAt: DateTime.parse(json['createdAt']),
-  );
-}
-
-// Note Model
-class Note {
-  final String id;
-  final String title;
-  final String content;
-  final List<ListItem> listItems;
-  final List<String> selectedRecipes;
-  final bool isChecklist;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-
+class Note extends ShoppingList {
   Note({
-    required this.id,
-    required this.title,
-    this.content = '',
-    this.listItems = const [],
-    this.selectedRecipes = const [],
-    this.isChecklist = false,
-    required this.createdAt,
-    required this.updatedAt,
+    required super.id,
+    required super.title,
+    super.content = '',
+    super.listItems = const [],
+    super.selectedRecipes = const [],
+    super.isChecklist = false,
+    required super.createdAt,
+    required super.updatedAt,
   });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'title': title,
-    'content': content,
-    'listItems': listItems.map((item) => item.toJson()).toList(),
-    'selectedRecipes': selectedRecipes,
-    'isChecklist': isChecklist,
-    'createdAt': createdAt.toIso8601String(),
-    'updatedAt': updatedAt.toIso8601String(),
-  };
 
   factory Note.fromJson(Map<String, dynamic> json) => Note(
-    id: json['id'],
-    title: json['title'],
-    content: json['content'] ?? '',
-    listItems:
-        (json['listItems'] as List<dynamic>?)
-            ?.map((item) => ListItem.fromJson(item))
-            .toList() ??
-        [],
-    selectedRecipes:
-        (json['selectedRecipes'] as List<dynamic>?)
-            ?.map((item) => item.toString())
-            .toList() ??
-        [],
-    isChecklist: json['isChecklist'] ?? false,
-    createdAt: DateTime.parse(json['createdAt']),
-    updatedAt: DateTime.parse(json['updatedAt']),
-  );
-}
-
-class SharedStorageService {
-  SharedStorageService({
-    http.Client? client,
-    AppStorage? storage,
-    this.endpointUrl,
-    this.token,
-    this.baseUri,
-  }) : _client = client ?? http.Client(),
-       _storage = storage;
-
-  final http.Client _client;
-  final AppStorage? _storage;
-  final String? endpointUrl;
-  final String? token;
-  final Uri? baseUri;
-  AppStorage? _resolvedStorage;
-
-  Future<void> initialize() async {
-    _resolvedStorage ??= _storage ?? await createAppStorage();
-  }
-
-  String? _configuredEndpoint() {
-    final configuredEndpoint =
-        endpointUrl ?? _readConfigValue('sharedStorageUrl');
-    if (configuredEndpoint == null || configuredEndpoint.trim().isEmpty) {
-      return null;
-    }
-
-    final base = baseUri ?? Uri.base;
-    final parsedEndpoint = Uri.tryParse(configuredEndpoint);
-    if (parsedEndpoint == null) {
-      return configuredEndpoint;
-    }
-
-    if (parsedEndpoint.hasScheme) {
-      return parsedEndpoint.toString();
-    }
-
-    return base.resolveUri(parsedEndpoint).toString();
-  }
-
-  String? _configuredToken() {
-    return token ?? _readConfigValue('sharedStorageToken');
-  }
-
-  String? _readConfigValue(String key) {
-    final queryValue = Uri.base.queryParameters[key];
-    if (queryValue != null && queryValue.isNotEmpty) {
-      return queryValue;
-    }
-
-    final fragment = Uri.base.fragment;
-    if (fragment.isNotEmpty) {
-      final fragmentUri = Uri.tryParse(fragment);
-      if (fragmentUri != null) {
-        final fragmentValue = fragmentUri.queryParameters[key];
-        if (fragmentValue != null && fragmentValue.isNotEmpty) {
-          return fragmentValue;
-        }
-      }
-    }
-
-    if (kIsWeb) {
-      final location = Uri.base.toString();
-      final match = RegExp('$key=([^&]+)').firstMatch(location);
-      if (match != null) {
-        return Uri.decodeComponent(match.group(1)!);
-      }
-    }
-
-    return null;
-  }
-
-  static const String _documentStorageKey = '__app_shared_document__';
-
-  Map<String, String> _parseDocument(String? rawValue) {
-    if (rawValue == null || rawValue.isEmpty) {
-      return <String, String>{};
-    }
-
-    try {
-      final decoded = jsonDecode(rawValue);
-      if (decoded is Map<String, dynamic>) {
-        final map = <String, String>{};
-        decoded.forEach((key, value) {
-          if (value is String) {
-            map[key] = value;
-          } else {
-            map[key] = jsonEncode(value);
-          }
-        });
-        return map;
-      }
-    } catch (_) {
-      // Fall back to a legacy raw entry below.
-    }
-
-    return <String, String>{};
-  }
-
-  Future<String?> loadRemoteValue(String storageKey) async {
-    await initialize();
-
-    final configuredEndpoint = _configuredEndpoint();
-    if (configuredEndpoint == null || configuredEndpoint.trim().isEmpty) {
-      return null;
-    }
-
-    try {
-      final response = await _client.get(
-        Uri.parse(configuredEndpoint),
-        headers: {
-          if (_configuredToken() != null && _configuredToken()!.isNotEmpty)
-            'Authorization': 'Bearer ${_configuredToken()}',
-          'Content-Type': 'application/json',
-        },
+        id: json['id'] as String? ?? '',
+        title: json['title'] as String? ?? '',
+        content: json['content'] as String? ?? '',
+        listItems: (json['listItems'] as List<dynamic>? ?? const [])
+            .map((item) => ListItem.fromJson(item as Map<String, dynamic>))
+            .toList(),
+        selectedRecipes: (json['selectedRecipes'] as List<dynamic>? ?? const [])
+            .map((item) => item.toString())
+            .toList(),
+        isChecklist: json['isChecklist'] as bool? ?? false,
+        createdAt: DateTime.parse(json['createdAt'] as String? ?? DateTime.now().toIso8601String()),
+        updatedAt: DateTime.parse(json['updatedAt'] as String? ?? DateTime.now().toIso8601String()),
       );
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final document = _parseDocument(response.body);
-        if (document.containsKey(storageKey)) {
-          return document[storageKey];
-        }
-
-        if (response.body.trim().isNotEmpty) {
-          return response.body;
-        }
-      }
-    } catch (_) {
-      return null;
-    }
-
-    return null;
-  }
-
-  Future<String?> loadLocalValue(String storageKey) async {
-    await initialize();
-
-    final document = _parseDocument(
-      await _resolvedStorage?.read(_documentStorageKey),
-    );
-    if (document.containsKey(storageKey)) {
-      return document[storageKey];
-    }
-
-    return _resolvedStorage?.read(storageKey);
-  }
-
-  Future<String?> loadValue(String storageKey) async {
-    final remoteValue = await loadRemoteValue(storageKey);
-    if (remoteValue != null && remoteValue.isNotEmpty) {
-      return remoteValue;
-    }
-    return loadLocalValue(storageKey);
-  }
-
-  Future<void> saveValue(String storageKey, String encodedValue) async {
-    await initialize();
-
-    final localDocument = _parseDocument(
-      await _resolvedStorage?.read(_documentStorageKey),
-    );
-    final remoteDocument = await _loadRemoteDocument();
-    final mergedDocument = <String, String>{
-      ...localDocument,
-      ...remoteDocument,
-    };
-    mergedDocument[storageKey] = encodedValue;
-
-    final encodedDocument = jsonEncode(mergedDocument);
-    await _resolvedStorage?.write(_documentStorageKey, encodedDocument);
-
-    final configuredEndpoint = _configuredEndpoint();
-    if (configuredEndpoint != null && configuredEndpoint.trim().isNotEmpty) {
-      try {
-        final response = await _client.post(
-          Uri.parse(configuredEndpoint),
-          headers: {
-            if (_configuredToken() != null && _configuredToken()!.isNotEmpty)
-              'Authorization': 'Bearer ${_configuredToken()}',
-            'Content-Type': 'application/json',
-          },
-          body: encodedDocument,
-        );
-
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return;
-        }
-      } catch (_) {
-        // Fall back to local storage below.
-      }
-    }
-  }
-
-  Future<Map<String, String>> _loadRemoteDocument() async {
-    final configuredEndpoint = _configuredEndpoint();
-    if (configuredEndpoint == null || configuredEndpoint.trim().isEmpty) {
-      return <String, String>{};
-    }
-
-    try {
-      final response = await _client.get(
-        Uri.parse(configuredEndpoint),
-        headers: {
-          if (_configuredToken() != null && _configuredToken()!.isNotEmpty)
-            'Authorization': 'Bearer ${_configuredToken()}',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return _parseDocument(response.body);
-      }
-    } catch (_) {
-      return <String, String>{};
-    }
-
-    return <String, String>{};
-  }
 }
 
-List<Note> mergeNotes(List<Note> existingNotes, List<Note> incomingNotes) {
-  final mergedById = <String, Note>{};
-
-  for (final note in [...existingNotes, ...incomingNotes]) {
-    final current = mergedById[note.id];
-    if (current == null) {
-      mergedById[note.id] = note;
-      continue;
-    }
-
-    final shouldReplace =
-        note.updatedAt.isAfter(current.updatedAt) ||
-        (note.updatedAt.isAtSameMomentAs(current.updatedAt) &&
-            note.createdAt.isAfter(current.createdAt));
-
-    if (shouldReplace) {
-      mergedById[note.id] = note;
-    }
-  }
-
-  final merged = mergedById.values.toList();
-  merged.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-  return merged;
-}
-
-List<Recipe> mergeRecipes(
-  List<Recipe> existingRecipes,
-  List<Recipe> incomingRecipes,
-) {
-  final mergedById = <String, Recipe>{};
-
-  for (final recipe in [...existingRecipes, ...incomingRecipes]) {
-    final current = mergedById[recipe.id];
-    if (current == null) {
-      mergedById[recipe.id] = recipe;
-      continue;
-    }
-
-    final shouldReplace = recipe.createdAt.isAfter(current.createdAt);
-    if (shouldReplace) {
-      mergedById[recipe.id] = recipe;
-    }
-  }
-
-  final merged = mergedById.values.toList();
-  merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  return merged;
-}
-
-// Notes Service
 class NotesService {
-  static const String _storageKey = 'notes_list';
-  final SharedStorageService _storage = SharedStorageService();
+  NotesService({StorageService? storage}) : _storage = storage ?? StorageService();
+
+  final StorageService _storage;
 
   Future<void> initialize() async {
     await _storage.initialize();
   }
 
-  List<Note> _parseNotes(String? notesJson) {
-    if (notesJson == null || notesJson.isEmpty) return [];
-
-    final List<dynamic> decoded = jsonDecode(notesJson);
-    return decoded.map((json) => Note.fromJson(json)).toList();
-  }
-
   Future<List<Note>> loadNotes() async {
-    final localNotesJson = await _storage.loadLocalValue(_storageKey);
-    final remoteNotesJson = await _storage.loadRemoteValue(_storageKey);
-    final localNotes = _parseNotes(localNotesJson);
-    final remoteNotes = _parseNotes(remoteNotesJson);
-    return mergeNotes(localNotes, remoteNotes);
+    final document = await _storage.loadDocument();
+    final notes = document.shoppingLists
+        .map(
+          (shoppingList) => Note(
+            id: shoppingList.id,
+            title: shoppingList.title,
+            content: shoppingList.content,
+            listItems: shoppingList.listItems,
+            selectedRecipes: shoppingList.selectedRecipes,
+            isChecklist: shoppingList.isChecklist,
+            createdAt: shoppingList.createdAt,
+            updatedAt: shoppingList.updatedAt,
+          ),
+        )
+        .toList();
+    notes.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return notes;
   }
 
   Future<void> saveNotes(List<Note> notes) async {
-    final localNotesJson = await _storage.loadLocalValue(_storageKey);
-    final remoteNotesJson = await _storage.loadRemoteValue(_storageKey);
-    final existingNotes = _parseNotes(localNotesJson);
-    final incomingNotes = _parseNotes(remoteNotesJson);
-    final mergedNotes = mergeNotes(
-      existingNotes,
-      mergeNotes(incomingNotes, notes),
+    final document = await _storage.loadDocument();
+    await _storage.saveDocument(
+      StorageDocument(
+        version: document.version,
+        recipes: document.recipes,
+        shoppingLists: notes
+            .map(
+              (note) => ShoppingList(
+                id: note.id,
+                title: note.title,
+                content: note.content,
+                listItems: note.listItems,
+                selectedRecipes: note.selectedRecipes,
+                isChecklist: note.isChecklist,
+                createdAt: note.createdAt,
+                updatedAt: note.updatedAt,
+              ),
+            )
+            .toList(),
+      ),
     );
-    final String encoded = jsonEncode(
-      mergedNotes.map((note) => note.toJson()).toList(),
-    );
-    await _storage.saveValue(_storageKey, encoded);
   }
 
   Future<void> addNote(Note note) async {
@@ -524,10 +158,10 @@ class NotesService {
   }
 }
 
-// Recipe Service
 class RecipeService {
-  static const String _storageKey = 'recipes_list';
-  final SharedStorageService _storage = SharedStorageService();
+  RecipeService({StorageService? storage}) : _storage = storage ?? StorageService();
+
+  final StorageService _storage;
 
   Recipe _buildDefaultRecipe() {
     return Recipe(
@@ -556,45 +190,21 @@ class RecipeService {
     await _storage.initialize();
   }
 
-  List<Recipe> _parseRecipes(String? recipesJson) {
-    if (recipesJson == null || recipesJson.isEmpty) return [];
-
-    final List<dynamic> decoded = jsonDecode(recipesJson);
-    return decoded.map((json) => Recipe.fromJson(json)).toList();
-  }
-
   Future<List<Recipe>> loadRecipes() async {
-    final localRecipesJson = await _storage.loadLocalValue(_storageKey);
-    final remoteRecipesJson = await _storage.loadRemoteValue(_storageKey);
-    final localRecipes = _parseRecipes(localRecipesJson);
-    final remoteRecipes = _parseRecipes(remoteRecipesJson);
-    final mergedRecipes = mergeRecipes(localRecipes, remoteRecipes);
-
-    if (mergedRecipes.isEmpty) {
-      final seededRecipes = [_buildDefaultRecipe()];
-      await _storage.saveValue(
-        _storageKey,
-        jsonEncode(seededRecipes.map((recipe) => recipe.toJson()).toList()),
-      );
-      return seededRecipes;
-    }
-
-    return mergedRecipes;
+    final document = await _storage.loadDocument();
+    // Do not seed any default recipes; return what's stored (may be empty).
+    return document.recipes;
   }
 
   Future<void> saveRecipes(List<Recipe> recipes) async {
-    final localRecipesJson = await _storage.loadLocalValue(_storageKey);
-    final remoteRecipesJson = await _storage.loadRemoteValue(_storageKey);
-    final existingRecipes = _parseRecipes(localRecipesJson);
-    final incomingRecipes = _parseRecipes(remoteRecipesJson);
-    final mergedRecipes = mergeRecipes(
-      existingRecipes,
-      mergeRecipes(incomingRecipes, recipes),
+    final document = await _storage.loadDocument();
+    await _storage.saveDocument(
+      StorageDocument(
+        version: document.version,
+        recipes: recipes,
+        shoppingLists: document.shoppingLists,
+      ),
     );
-    final String encoded = jsonEncode(
-      mergedRecipes.map((recipe) => recipe.toJson()).toList(),
-    );
-    await _storage.saveValue(_storageKey, encoded);
   }
 
   Future<void> addRecipe(Recipe recipe) async {
@@ -971,16 +581,17 @@ class _NotesHomePageState extends State<NotesHomePage> {
                               ],
                             ),
                             onTap: () => _editNote(note),
-                            trailing: PopupMenuButton(
+                            trailing: PopupMenuButton<String>(
+                              onSelected: (value) {
+                                if (value == 'edit') {
+                                  _editNote(note);
+                                } else if (value == 'delete') {
+                                  _deleteNote(note);
+                                }
+                              },
                               itemBuilder: (context) => [
-                                PopupMenuItem(
-                                  child: const Text('Edit'),
-                                  onTap: () => _editNote(note),
-                                ),
-                                PopupMenuItem(
-                                  child: const Text('Delete'),
-                                  onTap: () => _deleteNote(note),
-                                ),
+                                const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                const PopupMenuItem(value: 'delete', child: Text('Delete')),
                               ],
                             ),
                           ),
@@ -1028,9 +639,8 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
   }
 
   List<ListItem> _getSortedListItems() {
-    final unchecked = _listItems.where((item) => !item.isChecked).toList();
-    final checked = _listItems.where((item) => item.isChecked).toList();
-    return [...unchecked, ...checked];
+    // Preserve the user-defined order to allow reordering.
+    return _listItems;
   }
 
   @override
@@ -1228,7 +838,26 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
               style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
             const SizedBox(height: 12),
-            Expanded(child: _buildChecklistView()),
+            Expanded(
+              child: DefaultTabController(
+                length: 2,
+                child: Column(
+                  children: [
+                    TabBar(
+                      tabs: const [Tab(text: 'Items'), Tab(text: 'Selected Recipes')],
+                    ),
+                    Expanded(
+                      child: TabBarView(
+                        children: [
+                          _buildChecklistView(),
+                          _buildSelectedRecipesView(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -1270,86 +899,100 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
                     style: TextStyle(color: Colors.grey[500]),
                   ),
                 )
-              : ListView.builder(
-                  itemCount: sortedItems.length,
-                  itemBuilder: (context, index) {
-                    final item = sortedItems[index];
-                    final originalIndex = _listItems.indexOf(item);
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      color: item.isChecked ? Colors.grey[100] : Colors.white,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        child: Row(
-                          children: [
-                            Checkbox(
-                              value: item.isChecked,
-                              onChanged: (_) => _toggleListItem(originalIndex),
-                              activeColor: const Color(0xFF2563EB),
-                            ),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    item.text,
-                                    style: TextStyle(
-                                      decoration: item.isChecked
-                                          ? TextDecoration.lineThrough
-                                          : null,
-                                      color: item.isChecked
-                                          ? Colors.grey
-                                          : Colors.black,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  if (item.quantity.isNotEmpty)
+              : ReorderableListView(
+                  onReorder: (oldIndex, newIndex) {
+                    setState(() {
+                      if (newIndex > oldIndex) newIndex -= 1;
+                      final item = _listItems.removeAt(oldIndex);
+                      _listItems.insert(newIndex, item);
+                    });
+                  },
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  children: List.generate(
+                    sortedItems.length,
+                    (index) {
+                      final item = sortedItems[index];
+                      final originalIndex = index;
+                      return Card(
+                        key: ValueKey(item.id),
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        color: item.isChecked ? Colors.grey[100] : Colors.white,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          child: Row(
+                            children: [
+                              ReorderableDragStartListener(
+                                index: index,
+                                child: const Icon(Icons.drag_handle),
+                              ),
+                              const SizedBox(width: 8),
+                              Checkbox(
+                                value: item.isChecked,
+                                onChanged: (_) => _toggleListItem(originalIndex),
+                                activeColor: const Color(0xFF2563EB),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
                                     Text(
-                                      'Qty: ${item.quantity}',
+                                      item.text,
                                       style: TextStyle(
-                                        color: Colors.grey[600],
-                                        fontSize: 12,
+                                        decoration: item.isChecked
+                                            ? TextDecoration.lineThrough
+                                            : null,
+                                        color: item.isChecked ? Colors.grey : Colors.black,
+                                        fontSize: 16,
                                       ),
                                     ),
-                                ],
-                              ),
-                            ),
-                            SizedBox(
-                              width: 80,
-                              child: TextField(
-                                controller: TextEditingController(
-                                  text: item.quantity,
+                                    if (item.quantity.isNotEmpty)
+                                      Text(
+                                        'Qty: ${item.quantity}',
+                                        style: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                  ],
                                 ),
-                                decoration: InputDecoration(
-                                  hintText: 'Qty',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  isDense: true,
-                                ),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _listItems[originalIndex].quantity = value;
-                                  });
-                                },
                               ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, size: 20),
-                              onPressed: () => _removeListItem(originalIndex),
-                            ),
-                          ],
+                              SizedBox(
+                                width: 80,
+                                child: TextField(
+                                  controller: TextEditingController(
+                                    text: item.quantity,
+                                  ),
+                                  decoration: InputDecoration(
+                                    hintText: 'Qty',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    isDense: true,
+                                  ),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _listItems[originalIndex].quantity = value;
+                                    });
+                                  },
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete, size: 20),
+                                onPressed: () => _removeListItem(originalIndex),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
         ),
         const SizedBox(height: 12),
@@ -1400,6 +1043,62 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildSelectedRecipesView() {
+    if (_selectedRecipeNames.isEmpty) {
+      return Center(
+        child: Text(
+          'No selected recipes',
+          style: TextStyle(color: Colors.grey[500]),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.restaurant_menu,
+                size: 18,
+                color: Color(0xFF2563EB),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Selected recipes',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[800],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _selectedRecipeNames
+                .map(
+                  (name) => Chip(
+                    label: Text(name),
+                    backgroundColor: const Color(0xFFDBEAFE),
+                    labelStyle: const TextStyle(color: Color(0xFF1D4ED8)),
+                    onDeleted: () {
+                      setState(() {
+                        _selectedRecipeNames.remove(name);
+                      });
+                    },
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1632,16 +1331,17 @@ class _RecipesPageState extends State<RecipesPage> {
                       ],
                     ),
                     onTap: () => _editRecipe(recipe),
-                    trailing: PopupMenuButton(
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          _editRecipe(recipe);
+                        } else if (value == 'delete') {
+                          _deleteRecipe(recipe);
+                        }
+                      },
                       itemBuilder: (context) => [
-                        PopupMenuItem(
-                          child: const Text('Edit'),
-                          onTap: () => _editRecipe(recipe),
-                        ),
-                        PopupMenuItem(
-                          child: const Text('Delete'),
-                          onTap: () => _deleteRecipe(recipe),
-                        ),
+                        const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        const PopupMenuItem(value: 'delete', child: Text('Delete')),
                       ],
                     ),
                   ),
