@@ -1,9 +1,0 @@
-{
-  "domain": "shopping_storage",
-  "name": "Shopping Storage",
-  "documentation": "https://example.com",
-  "dependencies": [],
-  "codeowners": ["@openai"],
-  "requirements": [],
-  "version": "1.0.0"
-}
