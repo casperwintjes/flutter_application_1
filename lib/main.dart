@@ -627,6 +627,7 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
   late List<String> _selectedRecipeNames;
   late bool _isChecklist;
   late RecipeService _recipeService;
+  final Map<String, TextEditingController> _quantityControllers = {};
 
   @override
   void initState() {
@@ -640,9 +641,37 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
     _listItems = List.from(widget.note?.listItems ?? []);
     _selectedRecipeNames = List.from(widget.note?.selectedRecipes ?? []);
     _recipeService = RecipeService();
+    // initialize controllers for existing items
+    for (final item in _listItems) {
+      _quantityControllers[item.id] = TextEditingController(text: item.quantity);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _hydrateSelectedRecipes();
     });
+  }
+
+  void _ensureControllerForItem(ListItem item) {
+    final existing = _quantityControllers[item.id];
+    if (existing == null) {
+      _quantityControllers[item.id] = TextEditingController(text: item.quantity);
+    } else if (existing.text != item.quantity) {
+      existing.text = item.quantity;
+    }
+  }
+
+  void _removeControllerForId(String id) {
+    final c = _quantityControllers.remove(id);
+    c?.dispose();
+  }
+
+  void _syncQuantityControllers() {
+    for (final item in _listItems) {
+      _ensureControllerForItem(item);
+    }
+    final toRemove = _quantityControllers.keys.where((k) => !_listItems.any((i) => i.id == k)).toList();
+    for (final id in toRemove) {
+      _removeControllerForId(id);
+    }
   }
 
   Future<void> _hydrateSelectedRecipes() async {
@@ -681,12 +710,16 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
     _titleController.dispose();
     _contentController.dispose();
     _listItemController.dispose();
+    for (final c in _quantityControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   void _removeListItem(int index) {
     setState(() {
-      _listItems.removeAt(index);
+      final removed = _listItems.removeAt(index);
+      _removeControllerForId(removed.id);
     });
   }
 
@@ -694,6 +727,7 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
     setState(() {
       _listItems = mergeListItems(_listItems, text, quantity);
       _listItemController.clear();
+      _syncQuantityControllers();
     });
   }
 
@@ -994,8 +1028,8 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
                               ),
                               SizedBox(
                                 width: 80,
-                                child: TextFormField(
-                                  initialValue: item.quantity,
+                                child: TextField(
+                                  controller: _quantityControllers[item.id],
                                   decoration: InputDecoration(
                                     hintText: 'Qty',
                                     border: OutlineInputBorder(
