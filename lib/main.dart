@@ -1201,7 +1201,7 @@ class _RecipesPageState extends State<RecipesPage> {
 
     if (result != null && result is Recipe) {
       try {
-        await _recipe_service.addRecipe(result);
+        await _recipeService.addRecipe(result);
         await _loadRecipes();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1230,7 +1230,7 @@ class _RecipesPageState extends State<RecipesPage> {
 
     if (result != null && result is Recipe) {
       try {
-        await _recipe_service.updateRecipe(result);
+        await _recipeService.updateRecipe(result);
         await _loadRecipes();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1268,7 +1268,7 @@ class _RecipesPageState extends State<RecipesPage> {
 
     if (confirmed ?? false) {
       try {
-        await _recipe_service.deleteRecipe(recipe.id);
+        await _recipeService.deleteRecipe(recipe.id);
         await _loadRecipes();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
