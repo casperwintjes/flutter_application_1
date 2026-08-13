@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'dart:math';
 
 import 'services/models.dart';
 import 'services/storage_service.dart';
@@ -42,9 +43,11 @@ List<ListItem> mergeListItems(
     return updatedItems;
   }
 
+  // ensure a unique id even when items are added rapidly
+  final uniqueId = '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}';
   updatedItems.add(
     ListItem(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      id: uniqueId,
       text: normalizedText,
       quantity: quantity.trim().isEmpty ? '1' : quantity.trim(),
     ),
