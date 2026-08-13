@@ -192,8 +192,8 @@ class RecipeService {
 
   Future<List<Recipe>> loadRecipes() async {
     final document = await _storage.loadDocument();
-    // Do not seed any default recipes; return what's stored (may be empty).
-    return document.recipes;
+    // Return a mutable copy so callers can sort or modify safely.
+    return List<Recipe>.from(document.recipes);
   }
 
   Future<void> saveRecipes(List<Recipe> recipes) async {
@@ -1172,13 +1172,25 @@ class _RecipesPageState extends State<RecipesPage> {
   }
 
   Future<void> _loadRecipes() async {
-    await _recipeService.initialize();
-    final recipes = await _recipeService.loadRecipes();
-    setState(() {
-      _recipes = recipes;
-      _recipes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      _isLoading = false;
-    });
+    try {
+      await _recipeService.initialize();
+      final recipes = await _recipeService.loadRecipes();
+      setState(() {
+        _recipes = List<Recipe>.from(recipes);
+        _recipes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        _isLoading = false;
+      });
+    } catch (e, st) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load recipes: $e')),
+        );
+      }
+      // print to console for remote debugging
+      // ignore: avoid_print
+      print('Error loading recipes: $e\n$st');
+    }
   }
 
   void _addRecipe() async {
@@ -1188,12 +1200,22 @@ class _RecipesPageState extends State<RecipesPage> {
     );
 
     if (result != null && result is Recipe) {
-      await _recipeService.addRecipe(result);
-      await _loadRecipes();
+      try {
+        await _recipe_service.addRecipe(result);
+        await _loadRecipes();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Recipe created successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to add recipe: $e')),
+          );
+        }
+      }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Recipe created successfully')),
-        );
       }
     }
   }
@@ -1207,12 +1229,20 @@ class _RecipesPageState extends State<RecipesPage> {
     );
 
     if (result != null && result is Recipe) {
-      await _recipeService.updateRecipe(result);
-      await _loadRecipes();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Recipe updated successfully')),
-        );
+      try {
+        await _recipe_service.updateRecipe(result);
+        await _loadRecipes();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Recipe updated successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to update recipe: $e')),
+          );
+        }
       }
     }
   }
@@ -1237,12 +1267,20 @@ class _RecipesPageState extends State<RecipesPage> {
     );
 
     if (confirmed ?? false) {
-      await _recipeService.deleteRecipe(recipe.id);
-      await _loadRecipes();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Recipe deleted successfully')),
-        );
+      try {
+        await _recipe_service.deleteRecipe(recipe.id);
+        await _loadRecipes();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Recipe deleted successfully')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to delete recipe: $e')),
+          );
+        }
       }
     }
   }
