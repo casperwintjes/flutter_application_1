@@ -735,7 +735,18 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
 
   void _toggleListItem(int index) {
     setState(() {
-      _listItems[index].isChecked = !_listItems[index].isChecked;
+      final currently = _listItems[index];
+      // Toggle checked state
+      currently.isChecked = !currently.isChecked;
+
+      // If item was just checked, move it to the bottom of the list
+      if (currently.isChecked) {
+        // Remove from current position and append to end
+        final moved = _listItems.removeAt(index);
+        _listItems.add(moved);
+        // Keep quantity controllers in sync with new ordering
+        _syncQuantityControllers();
+      }
     });
   }
 
