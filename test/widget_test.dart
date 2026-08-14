@@ -46,6 +46,47 @@ void main() {
     expect(merged.first.quantity, '5');
   });
 
+  test('Recipe hydration does not re-add quantities when the same recipe is opened again', () {
+    final recipes = [
+      Recipe(
+        id: 'r1',
+        name: 'Standaard',
+        items: [
+          RecipeItem(id: 'i1', name: 'Milk', quantity: '2'),
+          RecipeItem(id: 'i2', name: 'Bread', quantity: '1'),
+        ],
+        createdAt: DateTime.now(),
+      ),
+    ];
+
+    final firstHydration = hydrateSelectedRecipeItems(
+      currentItems: [
+        ListItem(id: 'a1', text: 'Milk', quantity: '2'),
+      ],
+      selectedRecipeNames: ['Standaard'],
+      recipes: recipes,
+    );
+
+    final secondHydration = hydrateSelectedRecipeItems(
+      currentItems: firstHydration,
+      selectedRecipeNames: ['Standaard'],
+      recipes: recipes,
+    );
+
+    expect(secondHydration.length, 2);
+    expect(secondHydration.firstWhere((item) => item.text == 'Milk').quantity, '2');
+    expect(secondHydration.firstWhere((item) => item.text == 'Bread').quantity, '1');
+  });
+
+  test('ListItem clones do not share the same object identity', () {
+    final original = [ListItem(id: '1', text: 'Milk', quantity: '2')];
+
+    final clone = [original.first.copyWith()];
+    clone.first.quantity = '9';
+
+    expect(original.first.quantity, '2');
+  });
+
   test('Storage service loads an empty document when no data is present', () async {
     SharedPreferences.setMockInitialValues({});
 

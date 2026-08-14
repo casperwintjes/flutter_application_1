@@ -16,6 +16,55 @@ int _parseQuantityValue(String value) {
   return int.tryParse(trimmed) ?? 1;
 }
 
+List<ListItem> cloneListItems(List<ListItem> items) {
+  return items.map((item) => item.copyWith()).toList();
+}
+
+List<ListItem> hydrateSelectedRecipeItems({
+  required List<ListItem> currentItems,
+  required List<String> selectedRecipeNames,
+  required List<Recipe> recipes,
+}) {
+  final updated = cloneListItems(currentItems);
+
+  for (final recipeName in selectedRecipeNames) {
+    final recipe = recipes.firstWhere(
+      (item) => item.name.toLowerCase() == recipeName.toLowerCase(),
+      orElse: () => Recipe(
+        id: '',
+        name: recipeName,
+        items: const [],
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    if (recipe.id.isEmpty) continue;
+
+    for (final recipeItem in recipe.items) {
+      final normalizedName = recipeItem.name.trim();
+      if (normalizedName.isEmpty) continue;
+
+      final existingIndex = updated.indexWhere(
+        (item) => item.text.trim().toLowerCase() == normalizedName.toLowerCase(),
+      );
+
+      if (existingIndex != -1) {
+        continue;
+      }
+
+      updated.add(
+        ListItem(
+          id: '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 30)}',
+          text: normalizedName,
+          quantity: recipeItem.quantity.trim().isEmpty ? '1' : recipeItem.quantity.trim(),
+        ),
+      );
+    }
+  }
+
+  return updated;
+}
+
 List<ListItem> mergeListItems(
   List<ListItem> items,
   String text,
@@ -638,7 +687,7 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
     );
     _listItemController = TextEditingController();
     _isChecklist = widget.note?.isChecklist ?? true;
-    _listItems = List.from(widget.note?.listItems ?? []);
+    _listItems = cloneListItems(widget.note?.listItems ?? const []);
     _selectedRecipeNames = List.from(widget.note?.selectedRecipes ?? []);
     _recipeService = RecipeService();
     // initialize controllers for existing items
@@ -678,27 +727,16 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
     if (_selectedRecipeNames.isEmpty) return;
     await _recipeService.initialize();
     final recipes = await _recipeService.loadRecipes();
-    // Batch updates and set state once to avoid multiple rebuilds.
-    final updated = List<ListItem>.from(_listItems);
-    for (final name in _selectedRecipeNames) {
-      final recipe = recipes.firstWhere(
-        (r) => r.name.toLowerCase() == name.toLowerCase(),
-        orElse: () => Recipe(id: '', name: '', items: [], createdAt: DateTime.now()),
-      );
-      if (recipe.id.isEmpty) continue;
-      for (final recipeItem in recipe.items) {
-        final merged = mergeListItems(updated, recipeItem.name, recipeItem.quantity);
-        updated
-          ..clear()
-          ..addAll(merged);
-      }
-    }
+    final updated = hydrateSelectedRecipeItems(
+      currentItems: _listItems,
+      selectedRecipeNames: _selectedRecipeNames,
+      recipes: recipes,
+    );
 
     if (!mounted) return;
     setState(() {
       _listItems = updated;
     });
-    // Ensure controllers exist for any newly added/merged items
     _syncQuantityControllers();
   }
 

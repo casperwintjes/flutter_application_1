@@ -11,6 +11,19 @@ class ListItem {
     this.quantity = '',
   });
 
+  ListItem copyWith({
+    String? id,
+    String? text,
+    bool? isChecked,
+    String? quantity,
+  }) =>
+      ListItem(
+        id: id ?? this.id,
+        text: text ?? this.text,
+        isChecked: isChecked ?? this.isChecked,
+        quantity: quantity ?? this.quantity,
+      );
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'text': text,
